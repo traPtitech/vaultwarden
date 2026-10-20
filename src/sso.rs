@@ -283,14 +283,18 @@ pub async fn exchange_code(
 
     let user_info = client.user_info(token_response.access_token().to_owned()).await?;
 
-    let email = match id_claims.email().or(user_info.email()) {
-        None => err!("Neither id token nor userinfo contained an email"),
-        Some(e) => e.to_string().to_lowercase(),
-    };
-
-    let email_verified = id_claims.email_verified().or(user_info.email_verified());
-
     let user_name = id_claims.preferred_username().or(user_info.preferred_username()).map(|un| un.to_string());
+
+    let (email, email_verified) = match id_claims.email().or(user_info.email()) {
+        Some(email) => (
+            email.to_string().to_lowercase(),
+            id_claims.email_verified().or(user_info.email_verified()),
+        ),
+        None => match user_name.as_deref() {
+            Some(user_name) => (format!("{}@trap.invalid", user_name.to_lowercase()), Some(true)),
+            None => err!("Neither id token nor userinfo contained an email or preferred_username"),
+        },
+    };
 
     let refresh_token = token_response.refresh_token().map(openidconnect::RefreshToken::secret);
     if refresh_token.is_none() && CONFIG.sso_scopes_vec().contains(&"offline_access".to_owned()) {
